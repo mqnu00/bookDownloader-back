@@ -13,4 +13,4 @@ server:
 
 mybatis:
   mapper-locations: classpath:mapper/*Mapper.xml
-  type-aliases-package: com.example.test.demos.web.Entity
+  type-aliases-package: com.example.bookDownload.demos.web.Entity

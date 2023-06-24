@@ -1,10 +1,8 @@
 package com.example.bookDownload.demos.web.Controller;
 
-import com.example.bookDownload.demos.web.Entity.Download;
-import com.example.bookDownload.demos.web.Entity.Novel;
+import com.example.bookDownload.demos.web.Entity.*;
 import com.example.bookDownload.demos.web.Mapper.NovelMapper;
 import com.example.bookDownload.demos.web.Mapper.VolumeMapper;
-import com.example.bookDownload.demos.web.Entity.Volume;
 import com.example.bookDownload.demos.web.util.FileUtil;
 import com.example.bookDownload.demos.web.util.NovelDownload;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,9 +38,11 @@ public class response {
     }
 
     @GetMapping("/novel/page/load")
-    public List<Novel> novelListLoad() {
+    public List<NovelWithBLOBs> novelListLoad() {
 
-        return novelMapper.queryAll();
+        NovelExample novelExample = new NovelExample();
+        novelExample.createCriteria();
+        return novelMapper.selectByExampleWithBLOBs(novelExample);
     }
 
     // 加载小说卷数据
@@ -50,7 +51,10 @@ public class response {
             @RequestParam("novel_id") int novel_id
             ) {
 
-        return volumeMapper.queryByNovel(novel_id);
+        VolumeExample volumeExample = new VolumeExample();
+        VolumeExample.Criteria criteria = volumeExample.createCriteria();
+        criteria.andNovelIdEqualTo(novel_id);
+        return volumeMapper.selectByExample(volumeExample);
     }
 
     //小说卷内容
@@ -59,7 +63,9 @@ public class response {
             @RequestParam("volume_id") int volume_id
     ) {
 
-        return volumeMapper.queryByVolume(volume_id);
+        List<Volume> res = new ArrayList<>();
+        res.add(volumeMapper.selectByPrimaryKey(volume_id));
+        return res;
     }
 
 //    下载小说
@@ -94,18 +100,21 @@ public class response {
 
                 // 根据小说的信息生成实体
                 HashMap<String, Object> map = new FileUtil().jsonReader(novelPath + "\\" + novelName + "\\info.json");
-                Novel novel = new Novel(
+                NovelWithBLOBs novel = new NovelWithBLOBs(
                         new ObjectMapper().convertValue(map.get("novelName"), String.class),
-                        new ObjectMapper().convertValue(map.get("description"), String.class),
                         new ObjectMapper().convertValue(map.get("author"), String.class),
+                        new ObjectMapper().convertValue(map.get("description"), String.class),
                         new FileUtil().pictureReader(novelPath + "\\" + novelName + "\\" + novelName + ".jpg")
                 );
                 // 如果这个小说没有在表中
-                if (novelMapper.selByNameExist(novelName) == 0) {
+                NovelExample novelExample = new NovelExample();
+                NovelExample.Criteria novelC = novelExample.createCriteria();
+                novelC.andTitleEqualTo(novelName);
+                if (novelMapper.selectByExample(novelExample).size() == 0) {
 
                     try {
 
-                        novelMapper.insNovel(novel);
+                        novelMapper.insert(novel);
                         mp.put("content", new ObjectMapper().convertValue(mp.get("content"), String.class)  + "\n" + novelName + " 添加成功");
                     } catch (Exception e) {
                         mp.put("error", mp.get("error") + "\n" + novelName + " 添加失败");
@@ -113,7 +122,7 @@ public class response {
                 } else mp.put("content", new ObjectMapper().convertValue(mp.get("content"), String.class) + "\n" + novelName + " 已存在");
 
                 // 添加小说id
-                novel.setId(novelMapper.selByName(novel.getTitle()).get(0).getId());
+                novel.setId(novelMapper.selectByExample(novelExample).get(0).getId());
 
                 // 添加小说卷
                 List<String> volumes = new FileUtil().fileFindAll(novelPath + "\\" + novelName);
@@ -124,12 +133,17 @@ public class response {
                     if (volume.contains("jpg")) continue;
                     if (volume.contains("json")) continue;
 
+                    VolumeExample volumeExample = new VolumeExample();
+                    VolumeExample.Criteria volumeC = volumeExample.createCriteria();
+                    volumeC.andNovelIdEqualTo(novel.getId());
+                    volumeC.andTitleEqualTo(volume.replace(".txt", ""));
+
                     // 小说不存在这一卷
-                    if (volumeMapper.queryByNovelVolume(volume.replace(".txt", ""), novel.getId()).size() == 0) {
+                    if (volumeMapper.selectByExample(volumeExample).size() == 0) {
                         try {
-                            volumeMapper.insertVolume(new Volume(
+                            volumeMapper.insert(new Volume(
                                     volume.replace(".txt", ""),
-                                    novelMapper.selByName(novelName).get(0).getId(),
+                                    novel.getId(),
                                     new FileUtil().fileContent(novelPath + "\\" + novelName + "\\" + volume)
                             ));
                             mp.put("content", new ObjectMapper().convertValue(mp.get("content"), String.class)  + "\n" + novelName + " " + volume + " 添加成功");
